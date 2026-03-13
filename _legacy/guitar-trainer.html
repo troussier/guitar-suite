@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fretboard Trainer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Bebas+Neue&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --panel: #111118;
+    --border: #2a2a3a;
+    --accent: #e8ff47;
+    --accent2: #ff4757;
+    --text: #e0e0f0;
+    --dim: #555570;
+    --beat-active: #e8ff47;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: 
+      repeating-linear-gradient(0deg, transparent, transparent 60px, rgba(232,255,71,0.015) 60px, rgba(232,255,71,0.015) 61px),
+      repeating-linear-gradient(90deg, transparent, transparent 60px, rgba(232,255,71,0.015) 60px, rgba(232,255,71,0.015) 61px);
+    pointer-events: none;
+  }
+
+  .container {
+    width: min(480px, 95vw);
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  header {
+    text-align: center;
+  }
+
+  h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(2rem, 8vw, 3.2rem);
+    letter-spacing: 0.15em;
+    color: var(--accent);
+    line-height: 1;
+  }
+
+  .subtitle {
+    font-size: 0.7rem;
+    color: var(--dim);
+    letter-spacing: 0.3em;
+    margin-top: 4px;
+  }
+
+  /* --- Note Display --- */
+  .note-display {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 40px 20px 28px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .next-note-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 14px;
+    min-height: 36px;
+  }
+
+  .next-label {
+    font-size: 0.6rem;
+    color: var(--dim);
+    letter-spacing: 0.25em;
+  }
+
+  .next-note {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.8rem;
+    color: var(--dim);
+    letter-spacing: 0.05em;
+    transition: color 0.2s, text-shadow 0.2s, transform 0.15s;
+    transform: scale(0.9);
+  }
+
+  .next-note.visible {
+    color: #ff9f43;
+    text-shadow: 0 0 20px rgba(255,159,67,0.4);
+    transform: scale(1);
+  }
+
+  .note-display::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform linear;
+  }
+
+  .note-display.counting::after {
+    transform: scaleX(1);
+  }
+
+  .current-note {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(7rem, 30vw, 11rem);
+    line-height: 1;
+    color: var(--accent);
+    text-shadow: 0 0 60px rgba(232,255,71,0.3);
+    transition: opacity 0.08s, transform 0.08s;
+    display: block;
+  }
+
+  .current-note.flash {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+
+  .beat-counter {
+    font-size: 0.75rem;
+    color: var(--dim);
+    letter-spacing: 0.2em;
+    margin-top: 8px;
+  }
+
+  .beat-dots {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background 0.05s, transform 0.05s;
+  }
+
+  .dot.active {
+    background: var(--accent);
+    transform: scale(1.4);
+    box-shadow: 0 0 8px var(--accent);
+  }
+
+  .dot.accent-beat {
+    border: 1px solid var(--dim);
+  }
+
+  /* --- BPM Control --- */
+  .bpm-section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 16px 20px;
+  }
+
+  .bpm-label {
+    font-size: 0.65rem;
+    color: var(--dim);
+    letter-spacing: 0.3em;
+    margin-bottom: 12px;
+  }
+
+  .bpm-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .bpm-value {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2.8rem;
+    color: var(--text);
+    min-width: 80px;
+  }
+
+  input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    box-shadow: 0 0 8px rgba(232,255,71,0.5);
+  }
+
+  .bpm-buttons {
+    display: flex;
+    gap: 6px;
+  }
+
+  .bpm-btn {
+    width: 32px;
+    height: 32px;
+    background: var(--border);
+    border: none;
+    border-radius: 3px;
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+
+  .bpm-btn:hover { background: #3a3a4a; }
+  .bpm-btn:active { background: var(--accent); color: #000; }
+
+  /* --- Controls --- */
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .btn-start {
+    grid-column: span 2;
+    padding: 18px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.5rem;
+    letter-spacing: 0.2em;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+
+  .btn-start:hover { background: #d4eb30; }
+  .btn-start:active { transform: scale(0.98); }
+  .btn-start.running { background: var(--accent2); color: #fff; }
+  .btn-start.running:hover { background: #ff2f3f; }
+
+  /* --- Info --- */
+  .info {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px 18px;
+    font-size: 0.68rem;
+    color: var(--dim);
+    line-height: 2;
+    letter-spacing: 0.05em;
+  }
+
+  .info span { color: var(--accent); }
+
+  /* --- Tick flash overlay --- */
+  .tick-flash {
+    position: fixed;
+    inset: 0;
+    background: rgba(232,255,71,0.04);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.05s;
+  }
+
+  .tick-flash.on { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="tick-flash" id="tickFlash"></div>
+
+<div class="container">
+  <header>
+    <h1>Fretboard Trainer</h1>
+    <div class="subtitle">指板音名トレーニング</div>
+  </header>
+
+  <div class="note-display" id="noteDisplay">
+    <span class="current-note" id="currentNote">—</span>
+    <div class="next-note-row">
+      <span class="next-label" id="nextLabel" style="opacity:0">NEXT</span>
+      <span class="next-note" id="nextNote"></span>
+    </div>
+    <div class="beat-counter" id="beatCounter">BEAT 0 / 8</div>
+    <div class="beat-dots" id="beatDots"></div>
+  </div>
+
+  <div class="bpm-section">
+    <div class="bpm-label">TEMPO</div>
+    <div class="bpm-row">
+      <div class="bpm-value" id="bpmValue">80</div>
+      <input type="range" id="bpmSlider" min="40" max="200" value="80">
+      <div class="bpm-buttons">
+        <button class="bpm-btn" onclick="changeBPM(-5)">−</button>
+        <button class="bpm-btn" onclick="changeBPM(+5)">+</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn-start" id="startBtn" onclick="toggleMetronome()">START</button>
+  </div>
+
+  <div class="info">
+    <span>使い方</span><br>
+    メトロノームに合わせて<br>
+    <span>6弦 → 1弦</span> の順に表示された音名を弾く<br>
+    <span>8拍</span>ごとに音名がランダムに切り替わる
+  </div>
+</div>
+
+<script>
+  const NOTES = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'];
+  const BEATS_PER_NOTE = 8;
+
+  let bpm = 80;
+  let isRunning = false;
+  let beat = 0;
+  let currentNote = '—';
+  let nextNoteVal = '';
+  let lastNote = '';
+  let audioCtx = null;
+  let nextTickTime = 0;
+  let timerID = null;
+  let startBtn = document.getElementById('startBtn');
+  let noteEl = document.getElementById('currentNote');
+  let nextNoteEl = document.getElementById('nextNote');
+  let nextLabelEl = document.getElementById('nextLabel');
+  let beatCounterEl = document.getElementById('beatCounter');
+  let noteDisplay = document.getElementById('noteDisplay');
+  let tickFlash = document.getElementById('tickFlash');
+
+  // Build beat dots
+  const dotsContainer = document.getElementById('beatDots');
+  for (let i = 0; i < BEATS_PER_NOTE; i++) {
+    const d = document.createElement('div');
+    d.className = 'dot' + (i === 0 ? ' accent-beat' : '');
+    d.id = 'dot-' + i;
+    dotsContainer.appendChild(d);
+  }
+
+  function getAudioCtx() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
+  }
+
+  function playTick(time, isAccent) {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = isAccent ? 1200 : 800;
+    gain.gain.setValueAtTime(isAccent ? 0.5 : 0.25, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+    osc.start(time);
+    osc.stop(time + 0.06);
+  }
+
+  function pickNote(excludeNote) {
+    let n;
+    do { n = NOTES[Math.floor(Math.random() * NOTES.length)]; } while (n === excludeNote);
+    return n;
+  }
+
+  function pickNewNote() {
+    const n = pickNote(lastNote);
+    lastNote = n;
+    return n;
+  }
+
+  function showNextNote(note) {
+    nextNoteEl.textContent = note;
+    nextNoteEl.classList.add('visible');
+    nextLabelEl.style.opacity = '1';
+  }
+
+  function hideNextNote() {
+    nextNoteEl.classList.remove('visible');
+    nextLabelEl.style.opacity = '0';
+    nextNoteEl.textContent = '';
+  }
+
+  function scheduleNote() {
+    const ctx = getAudioCtx();
+    const interval = 60 / bpm;
+    const lookAhead = 0.1;
+
+    while (nextTickTime < ctx.currentTime + lookAhead) {
+      const beatInMeasure = beat % BEATS_PER_NOTE;
+      const isFirstBeat = beatInMeasure === 0;
+      const isPreviewBeat = beatInMeasure === 6; // 7th beat → show next note
+
+      playTick(nextTickTime, isFirstBeat);
+
+      const scheduledBeat = beat;
+      const delay = (nextTickTime - ctx.currentTime) * 1000;
+
+      setTimeout(() => {
+        if (!isRunning) return;
+        updateBeatUI(scheduledBeat % BEATS_PER_NOTE);
+        tickFlash.classList.add('on');
+        setTimeout(() => tickFlash.classList.remove('on'), 60);
+      }, Math.max(0, delay));
+
+      if (isFirstBeat) {
+        // current note becomes the pre-generated next note (or pick fresh on very first beat)
+        const newNote = nextNoteVal || pickNewNote();
+        currentNote = newNote;
+        nextNoteVal = ''; // clear; will be set on beat 6
+        const noteDelay = (nextTickTime - ctx.currentTime) * 1000;
+        const capturedNote = newNote;
+        setTimeout(() => {
+          if (!isRunning) return;
+          hideNextNote();
+          noteEl.classList.add('flash');
+          setTimeout(() => {
+            noteEl.textContent = capturedNote;
+            noteEl.classList.remove('flash');
+            noteDisplay.style.setProperty('transition', `none`);
+            noteDisplay.classList.remove('counting');
+            void noteDisplay.offsetWidth;
+            noteDisplay.style.transition = ``;
+            requestAnimationFrame(() => {
+              noteDisplay.classList.add('counting');
+              noteDisplay.style.setProperty('--bar-duration', (BEATS_PER_NOTE * 60 / bpm) + 's');
+            });
+          }, 80);
+        }, Math.max(0, noteDelay));
+      }
+
+      if (isPreviewBeat) {
+        // Pre-generate and show the next note on beat 7
+        const upcoming = pickNote(currentNote);
+        nextNoteVal = upcoming;
+        lastNote = upcoming; // so beat 1 doesn't re-pick same note
+        const previewDelay = (nextTickTime - ctx.currentTime) * 1000;
+        const capturedUpcoming = upcoming;
+        setTimeout(() => {
+          if (!isRunning) return;
+          showNextNote(capturedUpcoming);
+        }, Math.max(0, previewDelay));
+      }
+
+      nextTickTime += interval;
+      beat++;
+    }
+
+    timerID = setTimeout(scheduleNote, 25);
+  }
+
+  function updateBeatUI(b) {
+    // Reset all dots
+    for (let i = 0; i < BEATS_PER_NOTE; i++) {
+      document.getElementById('dot-' + i).classList.remove('active');
+    }
+    document.getElementById('dot-' + b).classList.add('active');
+    beatCounterEl.textContent = `BEAT ${b + 1} / ${BEATS_PER_NOTE}`;
+  }
+
+  function toggleMetronome() {
+    if (isRunning) {
+      stopMetronome();
+    } else {
+      startMetronome();
+    }
+  }
+
+  function startMetronome() {
+    isRunning = true;
+    beat = 0;
+    currentNote = pickNewNote();
+    noteEl.textContent = currentNote;
+    startBtn.textContent = 'STOP';
+    startBtn.classList.add('running');
+    const ctx = getAudioCtx();
+    nextTickTime = ctx.currentTime + 0.1;
+    scheduleNote();
+
+    // Start progress bar
+    const barDur = (BEATS_PER_NOTE * 60 / bpm) * 1000;
+    noteDisplay.style.setProperty('transition', `none`);
+    noteDisplay.classList.remove('counting');
+    void noteDisplay.offsetWidth;
+    noteDisplay.style.setProperty('transition', '');
+    setTimeout(() => noteDisplay.classList.add('counting'), 50);
+    noteDisplay.style.setProperty('--bar-duration', (BEATS_PER_NOTE * 60 / bpm) + 's');
+  }
+
+  function stopMetronome() {
+    isRunning = false;
+    clearTimeout(timerID);
+    startBtn.textContent = 'START';
+    startBtn.classList.remove('running');
+    noteEl.textContent = '—';
+    beatCounterEl.textContent = 'BEAT 0 / 8';
+    noteDisplay.classList.remove('counting');
+    nextNoteVal = '';
+    hideNextNote();
+    for (let i = 0; i < BEATS_PER_NOTE; i++) {
+      document.getElementById('dot-' + i).classList.remove('active');
+    }
+  }
+
+  function changeBPM(delta) {
+    bpm = Math.min(200, Math.max(40, bpm + delta));
+    document.getElementById('bpmValue').textContent = bpm;
+    document.getElementById('bpmSlider').value = bpm;
+    if (isRunning) {
+      stopMetronome();
+      startMetronome();
+    }
+  }
+
+  document.getElementById('bpmSlider').addEventListener('input', function() {
+    bpm = parseInt(this.value);
+    document.getElementById('bpmValue').textContent = bpm;
+    if (isRunning) {
+      stopMetronome();
+      startMetronome();
+    }
+  });
+
+  // Dynamic progress bar via CSS variable
+  const style = document.createElement('style');
+  style.textContent = `
+    .note-display.counting::after {
+      transition: transform var(--bar-duration, 4s) linear !important;
+      transform: scaleX(1) !important;
+    }
+  `;
+  document.head.appendChild(style);
+</script>
+</body>
+</html>
