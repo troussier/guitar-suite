@@ -1,25 +1,26 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { MetronomeEngine, BEATS_PER_NOTE } from '../components/MetronomeEngine'
+import { MetronomeEngine, BEATS_PER_NOTE, COUNT_IN_BEATS } from '../components/MetronomeEngine'
 
 export default function FretboardTrainer() {
   const [bpm, setBpm] = useState(80)
   const [isRunning, setIsRunning] = useState(false)
+  const [isCountIn, setIsCountIn] = useState(false)
+  const [countInBeat, setCountInBeat] = useState(-1)
   const [currentNote, setCurrentNote] = useState('—')
   const [nextNote, setNextNote] = useState(null)
   const [currentBeat, setCurrentBeat] = useState(null)
 
   const engineRef = useRef(null)
   const progressBarRef = useRef(null)
-  // プログレスバーのアニメーション duration を CSS variable で管理
+  // カウントイン中かどうかを ref で管理（コールバック内で参照するため）
+  const isCountInRef = useRef(false)
   const barDuration = (BEATS_PER_NOTE * 60) / bpm
 
-  // プログレスバーをリセットして再スタートするユーティリティ
   const resetProgressBar = useCallback(() => {
     const bar = progressBarRef.current
     if (!bar) return
     bar.style.transition = 'none'
     bar.classList.remove('counting')
-    // リフロー強制でトランジションをリセット
     void bar.offsetWidth
     bar.style.transition = `transform ${barDuration}s linear`
     requestAnimationFrame(() => {
@@ -27,15 +28,25 @@ export default function FretboardTrainer() {
     })
   }, [barDuration])
 
-  // エンジン初期化（コールバックは最新 state を参照しないよう ref で保持）
   const callbacksRef = useRef({})
   callbacksRef.current = {
-    onBeat: (beat) => setCurrentBeat(beat),
+    onBeat: (beat) => {
+      // 最初の onBeat でカウントイン終了
+      isCountInRef.current = false
+      setIsCountIn(false)
+      setCurrentBeat(beat)
+    },
     onNoteChange: (note) => {
       setCurrentNote(note)
-      resetProgressBar()
+      // カウントイン中はプログレスバーを動かさない
+      if (!isCountInRef.current) {
+        resetProgressBar()
+      }
     },
     onNextNote: (note) => setNextNote(note),
+    onCountIn: (beat) => {
+      setCountInBeat(beat)
+    },
   }
 
   useEffect(() => {
@@ -43,6 +54,7 @@ export default function FretboardTrainer() {
       onBeat: (beat) => callbacksRef.current.onBeat(beat),
       onNoteChange: (note) => callbacksRef.current.onNoteChange(note),
       onNextNote: (note) => callbacksRef.current.onNextNote(note),
+      onCountIn: (beat) => callbacksRef.current.onCountIn(beat),
     })
     engineRef.current = engine
     return () => engine.destroy()
@@ -54,20 +66,25 @@ export default function FretboardTrainer() {
 
     if (isRunning) {
       engine.stop()
+      isCountInRef.current = false
       setIsRunning(false)
+      setIsCountIn(false)
+      setCountInBeat(-1)
       setCurrentNote('—')
       setNextNote(null)
       setCurrentBeat(null)
-      // プログレスバーをリセット
       const bar = progressBarRef.current
       if (bar) {
         bar.style.transition = 'none'
         bar.classList.remove('counting')
       }
     } else {
+      isCountInRef.current = true
       engine.setBpm(bpm)
       engine.start()
       setIsRunning(true)
+      setIsCountIn(true)
+      setCountInBeat(-1)
     }
   }
 
@@ -75,11 +92,13 @@ export default function FretboardTrainer() {
     const clamped = Math.min(200, Math.max(40, newBpm))
     setBpm(clamped)
     if (isRunning && engineRef.current) {
-      // BPM変更時はいったん再起動
       engineRef.current.stop()
+      isCountInRef.current = true
       setCurrentNote('—')
       setNextNote(null)
       setCurrentBeat(null)
+      setIsCountIn(true)
+      setCountInBeat(-1)
       engineRef.current.setBpm(clamped)
       engineRef.current.start()
     }
@@ -117,67 +136,101 @@ export default function FretboardTrainer() {
 
         {/* 音名表示エリア */}
         <div className="bg-[#111118] border border-[#2a2a3a] rounded px-5 py-10 text-center relative overflow-hidden">
-          {/* プログレスバー */}
-          <div
-            ref={progressBarRef}
-            className="progress-bar-anim absolute top-0 left-0 right-0 h-0.5 bg-[#e8ff47]"
-          />
+          {/* プログレスバー（カウントイン中は非表示） */}
+          {!isCountIn && (
+            <div
+              ref={progressBarRef}
+              className="progress-bar-anim absolute top-0 left-0 right-0 h-0.5 bg-[#e8ff47]"
+            />
+          )}
 
           {/* 現在の音名 */}
           <span
-            className="block text-[#e8ff47] leading-none"
+            className="block leading-none"
             style={{
               fontFamily: "'Bebas Neue', sans-serif",
               fontSize: 'clamp(7rem, 30vw, 11rem)',
-              textShadow: '0 0 60px rgba(232,255,71,0.3)',
+              color: isCountIn ? '#b8cc2f' : '#e8ff47',
+              textShadow: isCountIn
+                ? '0 0 60px rgba(232,255,71,0.1)'
+                : '0 0 60px rgba(232,255,71,0.3)',
+              transition: 'color 0.2s, text-shadow 0.2s',
             }}
           >
             {currentNote}
           </span>
 
-          {/* 次の音名プレビュー */}
+          {/* 次の音名プレビュー（カウントイン中は非表示） */}
           <div className="flex items-center justify-center gap-2.5 mt-3.5 min-h-9">
-            <span
-              className="text-[0.6rem] tracking-[0.25em] transition-opacity duration-200"
-              style={{ color: '#555570', opacity: nextNote ? 1 : 0 }}
-            >
-              NEXT
-            </span>
-            <span
-              className="transition-all duration-200"
-              style={{
-                fontFamily: "'Bebas Neue', sans-serif",
-                fontSize: '1.8rem',
-                letterSpacing: '0.05em',
-                color: nextNote ? '#ff9f43' : '#555570',
-                textShadow: nextNote ? '0 0 20px rgba(255,159,67,0.4)' : 'none',
-                transform: nextNote ? 'scale(1)' : 'scale(0.9)',
-              }}
-            >
-              {nextNote ?? ''}
-            </span>
+            {!isCountIn && (
+              <>
+                <span
+                  className="text-[0.6rem] tracking-[0.25em] transition-opacity duration-200"
+                  style={{ color: '#555570', opacity: nextNote ? 1 : 0 }}
+                >
+                  NEXT
+                </span>
+                <span
+                  className="transition-all duration-200"
+                  style={{
+                    fontFamily: "'Bebas Neue', sans-serif",
+                    fontSize: '1.8rem',
+                    letterSpacing: '0.05em',
+                    color: nextNote ? '#ff9f43' : '#555570',
+                    textShadow: nextNote ? '0 0 20px rgba(255,159,67,0.4)' : 'none',
+                    transform: nextNote ? 'scale(1)' : 'scale(0.9)',
+                  }}
+                >
+                  {nextNote ?? ''}
+                </span>
+              </>
+            )}
           </div>
 
-          {/* ビートカウンター */}
-          <div className="text-[#555570] text-[0.75rem] tracking-[0.2em] mt-2">
-            BEAT {currentBeat !== null ? currentBeat + 1 : 0} / {BEATS_PER_NOTE}
-          </div>
-
-          {/* ビートドット */}
-          <div className="flex justify-center gap-2 mt-3">
-            {Array.from({ length: BEATS_PER_NOTE }, (_, i) => (
+          {/* ビートカウンター / カウントインドット */}
+          {isCountIn ? (
+            <>
               <div
-                key={i}
-                className="w-2.5 h-2.5 rounded-full transition-all duration-50"
-                style={{
-                  background: currentBeat === i ? '#e8ff47' : '#2a2a3a',
-                  transform: currentBeat === i ? 'scale(1.4)' : 'scale(1)',
-                  boxShadow: currentBeat === i ? '0 0 8px #e8ff47' : 'none',
-                  border: i === 0 ? '1px solid #555570' : 'none',
-                }}
-              />
-            ))}
-          </div>
+                className="text-[0.75rem] tracking-[0.2em] mt-2"
+                style={{ color: '#ff9f43' }}
+              >
+                COUNT IN
+              </div>
+              <div className="flex justify-center gap-2 mt-3">
+                {Array.from({ length: COUNT_IN_BEATS }, (_, i) => (
+                  <div
+                    key={i}
+                    className="w-2.5 h-2.5 rounded-full transition-all duration-50"
+                    style={{
+                      background: countInBeat === i ? '#ff9f43' : '#2a2a3a',
+                      transform: countInBeat === i ? 'scale(1.4)' : 'scale(1)',
+                      boxShadow: countInBeat === i ? '0 0 8px #ff9f43' : 'none',
+                    }}
+                  />
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-[#555570] text-[0.75rem] tracking-[0.2em] mt-2">
+                BEAT {currentBeat !== null ? currentBeat + 1 : 0} / {BEATS_PER_NOTE}
+              </div>
+              <div className="flex justify-center gap-2 mt-3">
+                {Array.from({ length: BEATS_PER_NOTE }, (_, i) => (
+                  <div
+                    key={i}
+                    className="w-2.5 h-2.5 rounded-full transition-all duration-50"
+                    style={{
+                      background: currentBeat === i ? '#e8ff47' : '#2a2a3a',
+                      transform: currentBeat === i ? 'scale(1.4)' : 'scale(1)',
+                      boxShadow: currentBeat === i ? '0 0 8px #e8ff47' : 'none',
+                      border: i === 0 ? '1px solid #555570' : 'none',
+                    }}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         {/* BPMコントロール */}
